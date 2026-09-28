@@ -106,6 +106,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             history.append(snap.cpu)
             if history.count > historyLength { history.removeFirst(history.count - historyLength) }
         }
+        let net = sensors.network()
+        snap.netDown = net.down; snap.netUp = net.up
+
         let m = sensors.memory()
         snap.ramPct = m.pct; snap.ramUsedGB = m.usedGB; snap.ramTotalGB = m.totalGB
         snap.swapGB = m.swapGB; snap.pressure = m.pressure
@@ -149,6 +152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var sig = ms.map(\.rawValue).joined(separator: ",")
         sig += "|\(Int(s.ramPct))|\(Int(s.diskPct))|\(Int(s.temp))|\(Int(s.watts * 10))"
         sig += "|\(Int(s.gpu))|\(Int(s.battPct))|\(Int(s.fan))"
+        if ms.contains(.net) { sig += "|\(Bar.rate(s.netDown))|\(Bar.rate(s.netUp))" }
         if ms.contains(.cpu) { sig += "|" + h.map { String(Int($0)) }.joined(separator: ".") }
         guard sig != lastSignature else { return }
         lastSignature = sig

@@ -21,6 +21,8 @@ struct Snapshot {
 
     var battPct = 0.0, battHealth = 0.0, battCycles = 0
     var charging = false, timeLeft = -1
+
+    var netDown = 0.0, netUp = 0.0     // bytes per second
 }
 
 func sysctlInt(_ name: String) -> Int {
@@ -37,6 +39,7 @@ final class Sensors {
 
     private var prevBusy: [Double] = []
     private var prevTotal: [Double] = []
+    private var prevRx: UInt64 = 0, prevTx: UInt64 = 0, prevNetAt: CFAbsoluteTime = 0
 
     init() { _ = smc_open() }
     deinit { smc_close() }
@@ -72,6 +75,36 @@ final class Sensors {
             let dt = total[i] - prevTotal[i]
             return dt > 0 ? min(100, max(0, (busy[i] - prevBusy[i]) / dt * 100)) : 0
         }
+    }
+
+    /// Throughput in bytes per second since the previous call.
+    ///
+    /// Counts en* interfaces only. Those carry the real traffic, so tunnels (utun*, ipsec*)
+    /// would report the same bytes a second time and roughly double the figure for anyone
+    /// on a VPN. Loopback is excluded for the same reason.
+    func network() -> (down: Double, up: Double) {
+        var ifap: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifap) == 0 else { return (0, 0) }
+        defer { freeifaddrs(ifap) }
+
+        var rx: UInt64 = 0, tx: UInt64 = 0
+        var cursor = ifap
+        while let cur = cursor {
+            defer { cursor = cur.pointee.ifa_next }
+            guard cur.pointee.ifa_addr?.pointee.sa_family == UInt8(AF_LINK),
+                  String(cString: cur.pointee.ifa_name).hasPrefix("en"),
+                  let d = cur.pointee.ifa_data?.assumingMemoryBound(to: if_data.self) else { continue }
+            rx += UInt64(d.pointee.ifi_ibytes)
+            tx += UInt64(d.pointee.ifi_obytes)
+        }
+
+        let now = CFAbsoluteTimeGetCurrent()
+        defer { prevRx = rx; prevTx = tx; prevNetAt = now }
+
+        // No baseline yet, or counters went backwards because an interface reset.
+        guard prevNetAt > 0, now > prevNetAt, rx >= prevRx, tx >= prevTx else { return (0, 0) }
+        let dt = now - prevNetAt
+        return (Double(rx - prevRx) / dt, Double(tx - prevTx) / dt)
     }
 
     func memory() -> (pct: Double, usedGB: Double, totalGB: Double, swapGB: Double, pressure: String) {

@@ -4,13 +4,14 @@ import SwiftUI
 // MARK: - Which metrics appear in the menu bar
 
 enum Metric: String, CaseIterable {
-    case cpu, ram, ssd, temp, watts, gpu, batt, fan
+    case cpu, temp, ram, ssd, net, watts, gpu, batt, fan
 
     var title: String {
         switch self {
         case .cpu:   return "CPU graph"
         case .ram:   return "Memory"
         case .ssd:   return "Disk"
+        case .net:   return "Network"
         case .temp:  return "CPU temperature"
         case .watts: return "Power draw"
         case .gpu:   return "GPU"
@@ -25,6 +26,7 @@ enum Metric: String, CaseIterable {
         case .cpu, .temp: return "CPU"
         case .ram:   return "RAM"
         case .ssd:   return "SSD"
+        case .net:   return "NET"
         case .watts: return "PWR"
         case .gpu:   return "GPU"
         case .batt:  return "BAT"
@@ -35,7 +37,7 @@ enum Metric: String, CaseIterable {
     /// Roughly what one sample costs. Shown in the menu so the cost of enabling is visible.
     var costNote: String {
         switch self {
-        case .cpu, .ram:  return "free"
+        case .cpu, .ram, .net: return "free"
         case .temp, .watts, .fan: return "~350µs / 3s"
         case .ssd, .gpu, .batt:   return "30s tier"
         }
@@ -44,7 +46,10 @@ enum Metric: String, CaseIterable {
     static var enabled: [Metric] {
         get {
             guard let raw = UserDefaults.standard.array(forKey: "metrics") as? [String] else {
-                return [.cpu, .ram, .ssd, .temp]     // matches the default layout
+                // Only what changes moment to moment and is worth a permanent glance.
+            // Disk and network live in the popover: capacity barely moves, and a
+            // throughput readout is noise unless you are actively watching a transfer.
+            return [.cpu, .temp, .ram]
             }
             return raw.compactMap(Metric.init(rawValue:))
         }
@@ -69,6 +74,27 @@ enum Bar {
     private static let capWidth: CGFloat = 7
     private static let capLineH: CGFloat = 5.2
     private static let capAlpha: CGFloat = 0.72
+    static let netFont = NSFont.monospacedDigitSystemFont(ofSize: 8, weight: .regular)
+    private static var netCache: [String: (text: NSAttributedString, width: CGFloat, height: CGFloat)] = [:]
+
+    private static func netText(_ s: String) -> (text: NSAttributedString, width: CGFloat, height: CGFloat) {
+        if let hit = netCache[s] { return hit }
+        let a = NSAttributedString(string: s, attributes: [.font: netFont, .foregroundColor: NSColor.labelColor])
+        let size = a.size()
+        let entry = (a, ceil(size.width), size.height)
+        if netCache.count > 256 { netCache.removeAll(keepingCapacity: true) }
+        netCache[s] = entry
+        return entry
+    }
+
+    /// Compact rate, sized to stay narrow in the menu bar: 0K, 845K, 12.3M.
+    static func rate(_ bytesPerSecond: Double) -> String {
+        let kb = bytesPerSecond / 1024
+        if kb < 1 { return "0K" }
+        if kb < 1024 { return "\(Int(kb))K" }
+        let mb = kb / 1024
+        return mb < 100 ? String(format: "%.1fM", mb) : "\(Int(mb))M"
+    }
 
     // Everything below is rebuilt at most once per distinct string. Re-creating and
     // re-measuring attributed strings every tick was the single largest cost in the app.
@@ -104,7 +130,7 @@ enum Bar {
     /// Value string per metric, or nil when the metric renders a gauge instead.
     private static func value(_ m: Metric, _ s: Snapshot) -> String? {
         switch m {
-        case .cpu:   return nil
+        case .cpu, .net: return nil
         case .ram:   return "\(Int(s.ramPct.rounded()))%"
         case .ssd:   return "\(Int(s.diskPct.rounded()))%"
         case .temp:  return s.temp > 0 ? "\(Int(s.temp.rounded()))°" : "—"
@@ -126,6 +152,10 @@ enum Bar {
     }
 
     private static func width(_ m: Metric, _ s: Snapshot) -> CGFloat {
+        if m == .net {
+            return max(netText("\u{2193}" + rate(s.netDown)).width,
+                       netText("\u{2191}" + rate(s.netUp)).width) + 3
+        }
         var w = capWidth
         if m == .cpu { return w + 2 + 34 }
         if fill(m, s) != nil { w += 2 + 5 }
@@ -151,6 +181,17 @@ enum Bar {
     private static func draw(_ m: Metric, _ s: Snapshot, history: [Double], at x: CGFloat) {
         let midY = height / 2
         var cx = x
+
+        // Down over up, the way a phone status bar shows it. The arrows label the rows,
+        // so this metric skips the three-letter caption the others use.
+        if m == .net {
+            let down = netText("\u{2193}" + rate(s.netDown))
+            let up = netText("\u{2191}" + rate(s.netUp))
+            let bottom = (height - down.height * 2) / 2
+            up.text.draw(at: NSPoint(x: cx, y: bottom))
+            down.text.draw(at: NSPoint(x: cx, y: bottom + down.height))
+            return
+        }
 
         // Stacked three-letter caption, one glyph per row.
         if let glyphs = captions[m] {

@@ -70,6 +70,8 @@ struct DetailView: View {
             memorySection
             Divider()
             storageSection
+            Divider()
+            networkSection
             if s.battPct > 0 {
                 Divider()
                 batterySection
@@ -147,6 +149,20 @@ struct DetailView: View {
             }
             Meter(value: s.diskPct / 100)
         }
+    }
+
+    private var networkSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Row(label: "Network down") { Text(rateText(s.netDown)).fontWeight(.medium) }
+            Row(label: "Network up") { Text(rateText(s.netUp)) }
+        }
+    }
+
+    private func rateText(_ bytesPerSecond: Double) -> String {
+        let kb = bytesPerSecond / 1024
+        if kb < 1 { return "0 KB/s" }
+        if kb < 1024 { return String(format: "%.0f KB/s", kb) }
+        return String(format: "%.2f MB/s", kb / 1024)
     }
 
     private var batterySection: some View {

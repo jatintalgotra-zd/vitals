@@ -2,7 +2,11 @@
 
 A lightweight macOS menu bar widget for live hardware vitals — CPU load with a
 sparkline, per-core P/E split, die temperature, power draw, memory, disk,
-GPU, fan and battery health.
+network throughput, GPU, fan and battery health.
+
+The bar shows only what changes moment to moment and is worth a glance: CPU
+graph, CPU temperature and memory. Everything else lives in the click-through
+popover, and any metric can be moved to the bar from the right-click menu.
 
 Menu bar only: no Dock icon, no windows, no background daemon.
 
@@ -30,7 +34,7 @@ Sensor reads are tiered by measured cost:
 
 | Tier | Interval | Sources | Cost per sample |
 |---|---|---|---|
-| fast | refresh rate | CPU load, memory | ~17 µs |
+| fast | refresh rate | CPU load, memory, network | ~30 µs |
 | medium | 5 s | CPU temperature, power draw | ~680 µs |
 | slow | 30 s | GPU, battery, fan | ~2.5 ms |
 | disk | 300 s | disk capacity | ~5.8 ms |
