@@ -54,8 +54,37 @@ Requires the Command Line Tools. No Xcode project, and no SwiftPM — the
 so the build drives `clang` and `swiftc` directly.
 
 ```sh
-./build.sh      # produces Vitals.app
-open Vitals.app
+./build.sh             # build into .build/
+./build.sh --install   # build, install to /Applications, restart the app
+```
+
+`--install` quits the running copy first. Replacing the bundle under a live
+process leaves it running the old code until it restarts anyway.
+
+## Checking it works
+
+There is no unit test suite. The thing that actually breaks is a sensor path, when
+Apple moves a key or changes a unit, and that only shows up against real hardware.
+So there is a range check over every sampler instead:
+
+```sh
+clang -O2 -c src/smc.c -o /tmp/smc.o -Isrc
+swiftc -O -swift-version 5 -import-objc-header src/Bridging.h \
+    src/Sensors.swift tools/sanity/main.swift /tmp/smc.o \
+    -framework IOKit -framework AppKit -o /tmp/sanity && /tmp/sanity
+```
+
+It exits non-zero if any reading falls outside a plausible range.
+
+## Icon
+
+`tools/make-icon.swift` draws the icon at all ten sizes macOS wants. `Vitals.icns`
+is committed, so a normal build does not regenerate it:
+
+```sh
+swiftc -O tools/make-icon.swift -o /tmp/gen
+/tmp/gen /tmp/Vitals.iconset
+iconutil -c icns /tmp/Vitals.iconset -o Vitals.icns
 ```
 
 ## Layout
@@ -66,7 +95,9 @@ src/Sensors.swift       all samplers
 src/UI.swift            menu bar drawing
 src/Detail.swift        SwiftUI detail popover
 src/main.swift          app delegate, tiers, menu
-build.sh                clang + swiftc -> Vitals.app
+build.sh                clang + swiftc -> .build/Vitals.app
+tools/make-icon.swift   draws Vitals.icns
+tools/sanity/           range check over every sampler
 ```
 
 The SMC ioctl struct is written in C deliberately. Swift does not reproduce its
